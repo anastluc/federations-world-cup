@@ -116,6 +116,7 @@ export const COUNTRY_TO_FEDERATION: Record<string, FederationAcronym> = {
 };
 
 export function getFederationForCountry(countryName: string): FederationAcronym {
+  if (!countryName || typeof countryName !== 'string') return 'UEFA';
   // Handle edge cases if team names differ slightly
   const cleanName = countryName.trim();
   if (cleanName === 'DR Congo') return 'CAF';

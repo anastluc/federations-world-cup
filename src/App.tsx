@@ -57,6 +57,67 @@ interface FedStanding {
   winRate: number;
 }
 
+// Helper to parse "MM/DD/YYYY HH:MM" date string into numeric timestamp
+const parseMatchDate = (dateStr: string): number => {
+  if (!dateStr) return 0;
+  const [datePart, timePart] = dateStr.split(' ');
+  if (!datePart || !timePart) return 0;
+  const [month, day, year] = datePart.split('/').map(Number);
+  const [hours, minutes] = timePart.split(':').map(Number);
+  return new Date(year, month - 1, day, hours, minutes).getTime();
+};
+
+// Deterministic mock odds generator based on match ID
+const getMockOdds = (matchId: string) => {
+  let hash = 0;
+  for (let i = 0; i < matchId.length; i++) {
+    hash = matchId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const r1 = Math.abs(Math.sin(hash + 1));
+  const r2 = Math.abs(Math.sin(hash + 2));
+  
+  // Decide favorite: 0 = home favorite, 1 = away favorite, 2 = balanced
+  const favType = Math.floor(r1 * 3);
+  let homeOdds = 1.8;
+  let drawOdds = 3.2;
+  let awayOdds = 2.2;
+  
+  if (favType === 0) {
+    // Home heavy favorite
+    if (r2 > 0.7) {
+      homeOdds = 1.02 + r2 * 0.1;
+      drawOdds = 6.0 + r2 * 12.0;
+      awayOdds = 12.0 + r2 * 45.0;
+    } else {
+      homeOdds = 1.2 + r2 * 0.4;
+      drawOdds = 3.8 + r2 * 3.0;
+      awayOdds = 4.0 + r2 * 6.0;
+    }
+  } else if (favType === 1) {
+    // Away heavy favorite
+    if (r2 > 0.7) {
+      awayOdds = 1.02 + r2 * 0.1;
+      drawOdds = 6.0 + r2 * 12.0;
+      homeOdds = 12.0 + r2 * 45.0;
+    } else {
+      awayOdds = 1.2 + r2 * 0.4;
+      drawOdds = 3.8 + r2 * 3.0;
+      homeOdds = 4.0 + r2 * 6.0;
+    }
+  } else {
+    // Balanced
+    homeOdds = 1.8 + r2 * 1.5;
+    drawOdds = 2.8 + r2 * 1.0;
+    awayOdds = 1.9 + r2 * 1.8;
+  }
+  
+  return {
+    home: homeOdds.toFixed(2),
+    draw: drawOdds.toFixed(2),
+    away: awayOdds.toFixed(2)
+  };
+};
+
 const API_URL = 'https://worldcup26.ir/get/games';
 const CACHE_FALLBACK_URL = '/data/games.json';
 
@@ -84,6 +145,12 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedFedFilter, setSelectedFedFilter] = useState<string>('ALL');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'ALL' | 'FINISHED' | 'SCHEDULED'>('ALL');
+
+  // Selected Federation for Detail Matches
+  const [selectedFederation, setSelectedFederation] = useState<FederationAcronym | null>(null);
+  const [detailsSortField, setDetailsSortField] = useState<'date' | 'primaryOdds' | 'drawOdds' | 'opponentOdds'>('date');
+  const [detailsSortOrder, setDetailsSortOrder] = useState<'asc' | 'desc'>('asc');
+
 
   // Fetch Logic
   const fetchScores = useCallback(async () => {
@@ -154,21 +221,132 @@ export default function App() {
 
   // Filter Group Stage Matches and sort them chronologically
   const groupStageMatches = useMemo(() => {
-    const parseMatchDate = (dateStr: string): number => {
-      if (!dateStr) return 0;
-      const [datePart, timePart] = dateStr.split(' ');
-      if (!datePart || !timePart) return 0;
-      const [month, day, year] = datePart.split('/').map(Number);
-      const [hours, minutes] = timePart.split(':').map(Number);
-      return new Date(year, month - 1, day, hours, minutes).getTime();
-    };
-
     return [...matches]
       .filter(m => m.type === 'group')
       .sort((a, b) => parseMatchDate(a.local_date) - parseMatchDate(b.local_date));
   }, [matches]);
 
+  // Filter and sort matches for the selected federation
+  const selectedFederationMatches = useMemo(() => {
+    if (!selectedFederation) return [];
+    
+    // Filter matches where either team is in the selected federation
+    const filtered = groupStageMatches.filter(m => {
+      const homeFed = getFederationForCountry(m.home_team_name_en);
+      const awayFed = getFederationForCountry(m.away_team_name_en);
+      return homeFed === selectedFederation || awayFed === selectedFederation;
+    });
+
+    // Map to include ordered teams and mock odds
+    const mapped = filtered.map(m => {
+      const homeFed = getFederationForCountry(m.home_team_name_en);
+      const awayFed = getFederationForCountry(m.away_team_name_en);
+      const isHomeSelected = homeFed === selectedFederation;
+      const isAwaySelected = awayFed === selectedFederation;
+      
+      const mockOdds = getMockOdds(m.id);
+      
+      let primaryTeam = '';
+      let primaryFed: FederationAcronym = selectedFederation;
+      let primaryScore = '';
+      let primaryOdds = 0;
+      
+      let opponentTeam = '';
+      let opponentFed: FederationAcronym = 'UEFA';
+      let opponentScore = '';
+      let opponentOdds = 0;
+      
+      if (isHomeSelected && isAwaySelected) {
+        // Both are in the selected federation
+        primaryTeam = m.home_team_name_en;
+        primaryFed = homeFed;
+        primaryScore = m.home_score;
+        primaryOdds = parseFloat(mockOdds.home);
+        
+        opponentTeam = m.away_team_name_en;
+        opponentFed = awayFed;
+        opponentScore = m.away_score;
+        opponentOdds = parseFloat(mockOdds.away);
+      } else if (isHomeSelected) {
+        primaryTeam = m.home_team_name_en;
+        primaryFed = homeFed;
+        primaryScore = m.home_score;
+        primaryOdds = parseFloat(mockOdds.home);
+        
+        opponentTeam = m.away_team_name_en;
+        opponentFed = awayFed;
+        opponentScore = m.away_score;
+        opponentOdds = parseFloat(mockOdds.away);
+      } else {
+        primaryTeam = m.away_team_name_en;
+        primaryFed = awayFed;
+        primaryScore = m.away_score;
+        primaryOdds = parseFloat(mockOdds.away);
+        
+        opponentTeam = m.home_team_name_en;
+        opponentFed = homeFed;
+        opponentScore = m.home_score;
+        opponentOdds = parseFloat(mockOdds.home);
+      }
+      
+      // Determine date parts for display
+      // Format of m.local_date: "06/12/2026 18:00" -> We want: Date as e.g. "12 Jun", Year as "2026"
+      let dateDisplay = '';
+      let yearDisplay = '2026';
+      if (m.local_date) {
+        const [datePart] = m.local_date.split(' ');
+        if (datePart) {
+          const [month, day, year] = datePart.split('/').map(Number);
+          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          dateDisplay = `${day} ${months[month - 1]}`;
+          yearDisplay = String(year);
+        }
+      }
+      
+      return {
+        originalMatch: m,
+        dateDisplay,
+        yearDisplay,
+        primaryTeam,
+        primaryFed,
+        primaryScore,
+        primaryOdds,
+        opponentTeam,
+        opponentFed,
+        opponentScore,
+        opponentOdds,
+        drawOdds: parseFloat(mockOdds.draw)
+      };
+    });
+
+    // Sort the mapped list
+    return mapped.sort((a, b) => {
+      let comparison = 0;
+      if (detailsSortField === 'date') {
+        comparison = parseMatchDate(a.originalMatch.local_date) - parseMatchDate(b.originalMatch.local_date);
+      } else if (detailsSortField === 'primaryOdds') {
+        comparison = a.primaryOdds - b.primaryOdds;
+      } else if (detailsSortField === 'drawOdds') {
+        comparison = a.drawOdds - b.drawOdds;
+      } else if (detailsSortField === 'opponentOdds') {
+        comparison = a.opponentOdds - b.opponentOdds;
+      }
+      
+      return detailsSortOrder === 'asc' ? comparison : -comparison;
+    });
+  }, [groupStageMatches, selectedFederation, detailsSortField, detailsSortOrder]);
+
+  const handleDetailsSort = (field: 'date' | 'primaryOdds' | 'drawOdds' | 'opponentOdds') => {
+    if (detailsSortField === field) {
+      setDetailsSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setDetailsSortField(field);
+      setDetailsSortOrder('asc');
+    }
+  };
+
   // Calculate Standings
+
   const { federationStandings, groupStandings } = useMemo(() => {
     const countryStats: Record<string, CountryStanding> = {};
 
@@ -454,8 +632,18 @@ export default function App() {
                 <tbody>
                   {federationStandings.map((fed, index) => {
                     const color = fed.details.color;
+                    const isSelected = selectedFederation === fed.acronym;
                     return (
-                      <tr key={fed.acronym} style={{ borderLeft: `3px solid ${color}` }}>
+                      <tr 
+                        key={fed.acronym} 
+                        onClick={() => setSelectedFederation(isSelected ? null : fed.acronym)}
+                        title="Click to view matches & odds"
+                        style={{ 
+                          borderLeft: `3px solid ${color}`,
+                          cursor: 'pointer',
+                          backgroundColor: isSelected ? 'rgba(0, 0, 0, 0.04)' : undefined
+                        }}
+                      >
                         <td className="font-bold text-center" style={{ fontSize: '1rem' }}>{index + 1}</td>
                         <td>
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -492,6 +680,113 @@ export default function App() {
               <div style={{ marginTop: '1.25rem', padding: '1rem', background: 'rgba(0,0,0,0.01)', borderRadius: '8px', border: '1px dashed var(--border-light)', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                 <strong>Calculation Method:</strong> Standing metrics aggregate all individual country matches in the group stage. Matches between teams of the same federation count twice (adding a win and a loss, or two draws) towards the overall federation activity to maintain consistent points totals. Sorting is by Avg Points/Game (Pts/Pld), Win %, Goal Difference, then Goals For.
               </div>
+
+              {/* Selected Federation Matches & Odds Detail Section */}
+              {selectedFederation && (
+                <div className="glass-panel" style={{ marginTop: '2rem', padding: '1.5rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-light)', display: 'flex', flexDirection: 'column' }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      ⚽ <span className={`fed-badge ${selectedFederation}`}>{selectedFederation}</span> Matches &amp; Deterministic Odds
+                    </span>
+                    <button 
+                      onClick={() => setSelectedFederation(null)} 
+                      className="tab-btn" 
+                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.75rem', background: 'var(--bg-tertiary)', borderRadius: '6px' }}
+                    >
+                      Close ×
+                    </button>
+                  </h3>
+                  
+                  {selectedFederationMatches.length === 0 ? (
+                    <p style={{ textAlign: 'center', color: 'var(--text-tertiary)', padding: '2rem', fontSize: '0.9rem' }}>
+                      No matches found for {selectedFederation}.
+                    </p>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)', textTransform: 'uppercase', fontSize: '0.7rem', fontWeight: 600 }}>
+                            <th onClick={() => handleDetailsSort('date')} style={{ padding: '0.6rem 0.5rem', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' } as React.CSSProperties}>
+                              DATE {detailsSortField === 'date' ? (detailsSortOrder === 'asc' ? '▼' : '▲') : '⇅'}
+                            </th>
+                            <th style={{ padding: '0.6rem 0.5rem' }}>YR</th>
+                            <th style={{ padding: '0.6rem 0.5rem' }}>{selectedFederation} TEAM</th>
+                            <th style={{ padding: '0.6rem 0.2rem', width: '20px', textAlign: 'center' }}></th>
+                            <th style={{ padding: '0.6rem 0.5rem' }}>OTHER TEAM</th>
+                            <th style={{ padding: '0.6rem 0.5rem', textAlign: 'center' }}>SCORE</th>
+                            <th style={{ padding: '0.6rem 0.5rem', textAlign: 'center' }}>RESULT</th>
+                            <th onClick={() => handleDetailsSort('primaryOdds')} style={{ padding: '0.6rem 0.5rem', textAlign: 'right', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' } as React.CSSProperties}>
+                              {selectedFederation} ODDS {detailsSortField === 'primaryOdds' ? (detailsSortOrder === 'asc' ? '▼' : '▲') : '⇅'}
+                            </th>
+                            <th onClick={() => handleDetailsSort('drawOdds')} style={{ padding: '0.6rem 0.5rem', textAlign: 'right', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' } as React.CSSProperties}>
+                              D ODDS {detailsSortField === 'drawOdds' ? (detailsSortOrder === 'asc' ? '▼' : '▲') : '⇅'}
+                            </th>
+                            <th onClick={() => handleDetailsSort('opponentOdds')} style={{ padding: '0.6rem 0.5rem', textAlign: 'right', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' } as React.CSSProperties}>
+                              OTHER ODDS {detailsSortField === 'opponentOdds' ? (detailsSortOrder === 'asc' ? '▼' : '▲') : '⇅'}
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedFederationMatches.map(({ originalMatch, dateDisplay, yearDisplay, primaryTeam, primaryFed, primaryScore, primaryOdds, opponentTeam, opponentFed, opponentScore, opponentOdds, drawOdds }) => {
+                            const isFinished = originalMatch.finished === 'TRUE';
+                            const isLive = originalMatch.finished === 'FALSE' && originalMatch.time_elapsed !== 'notstarted';
+                            const isDraw = isFinished && parseInt(primaryScore, 10) === parseInt(opponentScore, 10);
+                            const isPrimaryWin = isFinished && parseInt(primaryScore, 10) > parseInt(opponentScore, 10);
+                            
+                            let resultText = 'Scheduled';
+                            let resultColor = 'var(--text-tertiary)';
+                            
+                            if (isFinished) {
+                              if (isDraw) {
+                                resultText = 'Draw';
+                                resultColor = 'var(--warning)';
+                              } else if (isPrimaryWin) {
+                                resultText = `${primaryFed} Win`;
+                                resultColor = `var(--color-${primaryFed.toLowerCase()})`;
+                              } else {
+                                resultText = `${opponentFed} Win`;
+                                resultColor = `var(--color-${opponentFed.toLowerCase()})`;
+                              }
+                            } else if (isLive) {
+                              resultText = 'LIVE';
+                              resultColor = 'var(--error)';
+                            }
+                            
+                            return (
+                              <tr key={originalMatch.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                                <td style={{ padding: '0.6rem 0.5rem', whiteSpace: 'nowrap' }}>{dateDisplay}</td>
+                                <td style={{ padding: '0.6rem 0.5rem' }}>{yearDisplay}</td>
+                                <td style={{ padding: '0.6rem 0.5rem' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    <span style={{ fontWeight: 600 }}>{primaryTeam}</span>
+                                    <span className={`fed-badge ${primaryFed}`} style={{ fontSize: '0.65rem', padding: '0.1rem 0.3rem' }}>{primaryFed}</span>
+                                  </div>
+                                </td>
+                                <td style={{ padding: '0.6rem 0.2rem', textAlign: 'center', color: 'var(--text-tertiary)' }}>vs</td>
+                                <td style={{ padding: '0.6rem 0.5rem' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    <span>{opponentTeam}</span>
+                                    <span className={`fed-badge ${opponentFed}`} style={{ fontSize: '0.65rem', padding: '0.1rem 0.3rem' }}>{opponentFed}</span>
+                                  </div>
+                                </td>
+                                <td className="font-bold text-center" style={{ padding: '0.6rem 0.5rem' }}>
+                                  {isFinished || isLive ? `${primaryScore}-${opponentScore}` : '-'}
+                                </td>
+                                <td className="font-bold text-center" style={{ padding: '0.6rem 0.5rem', color: resultColor }}>
+                                  {resultText}
+                                </td>
+                                <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right', fontFamily: 'monospace' }}>{primaryOdds.toFixed(2)}</td>
+                                <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right', fontFamily: 'monospace' }}>{drawOdds.toFixed(2)}</td>
+                                <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right', fontFamily: 'monospace' }}>{opponentOdds.toFixed(2)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             /* WORLD CUP GROUP STANDINGS */
