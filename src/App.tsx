@@ -716,13 +716,13 @@ export default function App() {
                             <th style={{ padding: '0.6rem 0.5rem', textAlign: 'center' }}>SCORE</th>
                             <th style={{ padding: '0.6rem 0.5rem', textAlign: 'center' }}>RESULT</th>
                             <th onClick={() => handleDetailsSort('primaryOdds')} style={{ padding: '0.6rem 0.5rem', textAlign: 'right', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' } as React.CSSProperties}>
-                              {selectedFederation} ODDS {detailsSortField === 'primaryOdds' ? (detailsSortOrder === 'asc' ? '▼' : '▲') : '⇅'}
+                              1 {detailsSortField === 'primaryOdds' ? (detailsSortOrder === 'asc' ? '▼' : '▲') : '⇅'}
                             </th>
                             <th onClick={() => handleDetailsSort('drawOdds')} style={{ padding: '0.6rem 0.5rem', textAlign: 'right', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' } as React.CSSProperties}>
-                              D ODDS {detailsSortField === 'drawOdds' ? (detailsSortOrder === 'asc' ? '▼' : '▲') : '⇅'}
+                              X {detailsSortField === 'drawOdds' ? (detailsSortOrder === 'asc' ? '▼' : '▲') : '⇅'}
                             </th>
                             <th onClick={() => handleDetailsSort('opponentOdds')} style={{ padding: '0.6rem 0.5rem', textAlign: 'right', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' } as React.CSSProperties}>
-                              OTHER ODDS {detailsSortField === 'opponentOdds' ? (detailsSortOrder === 'asc' ? '▼' : '▲') : '⇅'}
+                              2 {detailsSortField === 'opponentOdds' ? (detailsSortOrder === 'asc' ? '▼' : '▲') : '⇅'}
                             </th>
                           </tr>
                         </thead>
