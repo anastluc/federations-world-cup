@@ -67,50 +67,88 @@ const parseMatchDate = (dateStr: string): number => {
   return new Date(year, month - 1, day, hours, minutes).getTime();
 };
 
-// Deterministic mock odds generator based on match ID
-const getMockOdds = (matchId: string) => {
+// Deterministic mock odds generator based on match ID, score, and finished status
+const getMockOdds = (
+  matchId: string, 
+  homeTeam: string, 
+  awayTeam: string, 
+  homeScoreStr: string, 
+  awayScoreStr: string, 
+  finished: string
+) => {
   let hash = 0;
-  for (let i = 0; i < matchId.length; i++) {
-    hash = matchId.charCodeAt(i) + ((hash << 5) - hash);
+  const str = `${matchId}-${homeTeam}-${awayTeam}`;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
   }
   const r1 = Math.abs(Math.sin(hash + 1));
   const r2 = Math.abs(Math.sin(hash + 2));
-  
-  // Decide favorite: 0 = home favorite, 1 = away favorite, 2 = balanced
-  const favType = Math.floor(r1 * 3);
-  let homeOdds = 1.8;
+
+  const isFinished = finished === 'TRUE';
+  const homeScore = parseInt(homeScoreStr, 10);
+  const awayScore = parseInt(awayScoreStr, 10);
+
+  let homeOdds = 2.2;
   let drawOdds = 3.2;
   let awayOdds = 2.2;
-  
-  if (favType === 0) {
-    // Home heavy favorite
-    if (r2 > 0.7) {
-      homeOdds = 1.02 + r2 * 0.1;
-      drawOdds = 6.0 + r2 * 12.0;
-      awayOdds = 12.0 + r2 * 45.0;
+
+  if (isFinished && !isNaN(homeScore) && !isNaN(awayScore)) {
+    const diff = homeScore - awayScore;
+    if (diff > 0) {
+      // Home team won (e.g. Germany vs Curacao 7-1)
+      if (diff >= 4) {
+        homeOdds = 1.01 + r1 * 0.05;
+        drawOdds = 8.0 + r2 * 10.0;
+        awayOdds = 15.0 + r2 * 45.0;
+      } else if (diff >= 2) {
+        homeOdds = 1.15 + r1 * 0.2;
+        drawOdds = 4.0 + r2 * 3.0;
+        awayOdds = 4.5 + r2 * 8.0;
+      } else {
+        homeOdds = 1.4 + r1 * 0.4;
+        drawOdds = 3.2 + r2 * 1.5;
+        awayOdds = 2.8 + r2 * 3.0;
+      }
+    } else if (diff < 0) {
+      // Away team won
+      const absDiff = Math.abs(diff);
+      if (absDiff >= 4) {
+        awayOdds = 1.01 + r1 * 0.05;
+        drawOdds = 8.0 + r2 * 10.0;
+        homeOdds = 15.0 + r2 * 45.0;
+      } else if (absDiff >= 2) {
+        awayOdds = 1.15 + r1 * 0.2;
+        drawOdds = 4.0 + r2 * 3.0;
+        homeOdds = 4.5 + r2 * 8.0;
+      } else {
+        awayOdds = 1.4 + r1 * 0.4;
+        drawOdds = 3.2 + r2 * 1.5;
+        homeOdds = 2.8 + r2 * 3.0;
+      }
     } else {
-      homeOdds = 1.2 + r2 * 0.4;
-      drawOdds = 3.8 + r2 * 3.0;
-      awayOdds = 4.0 + r2 * 6.0;
-    }
-  } else if (favType === 1) {
-    // Away heavy favorite
-    if (r2 > 0.7) {
-      awayOdds = 1.02 + r2 * 0.1;
-      drawOdds = 6.0 + r2 * 12.0;
-      homeOdds = 12.0 + r2 * 45.0;
-    } else {
-      awayOdds = 1.2 + r2 * 0.4;
-      drawOdds = 3.8 + r2 * 3.0;
-      homeOdds = 4.0 + r2 * 6.0;
+      // Draw
+      drawOdds = 2.5 + r1 * 0.8;
+      homeOdds = 2.0 + r2 * 1.0;
+      awayOdds = 2.0 + (1 - r2) * 1.0;
     }
   } else {
-    // Balanced
-    homeOdds = 1.8 + r2 * 1.5;
-    drawOdds = 2.8 + r2 * 1.0;
-    awayOdds = 1.9 + r2 * 1.8;
+    // Scheduled or no score
+    const favType = Math.floor(r1 * 3); // 0: home, 1: away, 2: balanced
+    if (favType === 0) {
+      homeOdds = 1.3 + r2 * 0.5;
+      drawOdds = 3.4 + r2 * 1.5;
+      awayOdds = 3.5 + r2 * 4.0;
+    } else if (favType === 1) {
+      awayOdds = 1.3 + r2 * 0.5;
+      drawOdds = 3.4 + r2 * 1.5;
+      homeOdds = 3.5 + r2 * 4.0;
+    } else {
+      homeOdds = 2.1 + r2 * 1.2;
+      drawOdds = 2.8 + r2 * 0.8;
+      awayOdds = 2.1 + (1 - r2) * 1.2;
+    }
   }
-  
+
   return {
     home: homeOdds.toFixed(2),
     draw: drawOdds.toFixed(2),
@@ -244,7 +282,7 @@ export default function App() {
       const isHomeSelected = homeFed === selectedFederation;
       const isAwaySelected = awayFed === selectedFederation;
       
-      const mockOdds = getMockOdds(m.id);
+      const mockOdds = getMockOdds(m.id, m.home_team_name_en, m.away_team_name_en, m.home_score, m.away_score, m.finished);
       
       let primaryTeam = '';
       let primaryFed: FederationAcronym = selectedFederation;
@@ -559,8 +597,8 @@ export default function App() {
   return (
     <div className="container">
       {/* Header Panel */}
-      <header className="glass-panel" style={{ padding: '1.25rem 1.75rem', marginBottom: '1.5rem', position: 'relative', overflow: 'hidden' }}>
-        <div>
+      <header className="glass-panel" style={{ padding: '1.25rem 1.75rem', marginBottom: '1.5rem', position: 'relative', overflow: 'hidden', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: '280px' }}>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 800, lineHeight: 1.1, marginBottom: '0.25rem', fontFamily: 'var(--font-display)' }}>
             World Cup 2026
           </h1>
@@ -568,6 +606,32 @@ export default function App() {
             Consolidated continental federation standings and matches tracker. Follow UEFA, CONCACAF, CONMEBOL, CAF, AFC, and OFC performance in real time.
           </p>
         </div>
+        <a 
+          href="https://github.com/anastluc/federations-world-cup"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="View on GitHub"
+          className="tab-btn"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.5rem 1rem',
+            background: 'var(--bg-tertiary)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '8px',
+            textDecoration: 'none',
+            fontSize: '0.8rem',
+            color: 'var(--text-primary)',
+            whiteSpace: 'nowrap',
+            height: 'fit-content'
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+          </svg>
+          GitHub
+        </a>
       </header>
 
       {/* Main Grid: Standings Leaderboard and Live Match Tracker */}
@@ -914,7 +978,7 @@ export default function App() {
           </div>
 
           {/* Matches List Container */}
-          <div style={{ flex: 1, overflowY: 'auto', maxHeight: '530px', paddingRight: '0.5rem', position: 'relative' }} ref={matchesContainerRef}>
+          <div style={{ flex: '1 1 0%', minHeight: '0px', overflowY: 'auto', paddingRight: '0.5rem', position: 'relative' }} ref={matchesContainerRef}>
             {filteredMatches.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-tertiary)' }}>
                 <p style={{ fontSize: '0.9rem' }}>No matching group stage games found.</p>
@@ -1110,7 +1174,9 @@ export default function App() {
       {/* Footer */}
       <footer style={{ marginTop: '3rem', borderTop: '1px solid var(--border-light)', paddingTop: '1.5rem', color: 'var(--text-tertiary)', fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <span>FIFA World Cup 2026 Continental Federation Dashboard</span>
-        <span>Aesthetic Minimalist Design • Built with React &amp; CSS Variables</span>
+        <span>
+          <a href="https://github.com/anastluc/federations-world-cup" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none', borderBottom: '1px solid var(--text-tertiary)' }}>GitHub Repository</a> • Aesthetic Minimalist Design
+        </span>
       </footer>
     </div>
   );
