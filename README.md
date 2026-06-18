@@ -1,6 +1,11 @@
 # World Cup 2026 - Continental Federation Standings
 
-A beautiful, minimalistic, and glassmorphic dark-themed web application that fetches the FIFA World Cup 2026 Group Stage fixtures and aggregates live performance metrics consolidated by continental federations (**UEFA**, **CONCACAF**, **CONMEBOL**, **CAF**, **AFC**, and **OFC**).
+A beautiful, minimalistic, and glassmorphic light-themed web application that fetches the FIFA World Cup 2026 Group Stage fixtures and aggregates live performance metrics consolidated by continental federations (**UEFA**, **CONCACAF**, **CONMEBOL**, **CAF**, **AFC**, and **OFC**).
+
+Live URL: **[https://wc-federations-2026-37a.web.app](https://wc-federations-2026-37a.web.app)**
+
+### 📱 Preview
+![World Cup 2026 Continental Federation Dashboard](screenshot.png)
 
 ## 🏆 Key Features
 
@@ -93,9 +98,8 @@ To test and deploy the application to Firebase Hosting:
 
 ## 🧮 Calculations Methodology
 
-1. **Intra-Federation Matches**: For matches between teams of the *same* federation (e.g. Germany vs. Switzerland):
-   - The match contributes **2 played team-matches** to that federation's record.
-   - In case of a decisive outcome, the federation gets **1 Win** and **1 Loss** (adding 3 points to its total).
-   - In case of a draw, the federation gets **2 Draws** (adding 2 points to its total).
-   This ensures that all matches are represented consistently.
+1. **Intra-Federation Matches**: Matches between teams of the *same* federation (e.g., Germany vs. Scotland, USA vs. Mexico) **are not counted** in the standings tables. They are excluded from both individual country statistics and aggregated federation statistics to ensure that only cross-federation matches determine the continental performance rankings.
+   - These matches display a `"Not considered"` badge in the main match feed.
+   - The outcome banner for finished intra-federation matches displays `"Intra-federation match • Not considered for standings"`.
+   - In clicked federation match details, they display `"Not Considered"` in the `RESULT` column.
 2. **Sorting Rule**: Federations are ranked in the leaderboard using **Average Points per Game** (Points / Games Played) as the primary index, followed by Win Rate (%), Goal Difference, and Goals For.
