@@ -420,6 +420,11 @@ export default function App() {
       initCountry(home);
       initCountry(away);
 
+      // Intra-federation matches are not considered in the standings
+      const homeFed = getFederationForCountry(home);
+      const awayFed = getFederationForCountry(away);
+      if (homeFed === awayFed) return;
+
       if (isFinished) {
         const homeScore = parseInt(m.home_score) || 0;
         const awayScore = parseInt(m.away_score) || 0;
@@ -800,8 +805,13 @@ export default function App() {
                             let resultText = 'Scheduled';
                             let resultColor = 'var(--text-tertiary)';
                             
+                            const isIntraFed = primaryFed === opponentFed;
+
                             if (isFinished) {
-                              if (isDraw) {
+                              if (isIntraFed) {
+                                resultText = 'Not Considered';
+                                resultColor = 'var(--text-tertiary)';
+                              } else if (isDraw) {
                                 resultText = 'Draw';
                                 resultColor = 'var(--warning)';
                               } else if (isPrimaryWin) {
@@ -812,8 +822,10 @@ export default function App() {
                                 resultColor = `var(--color-${opponentFed.toLowerCase()})`;
                               }
                             } else if (isLive) {
-                              resultText = 'LIVE';
+                              resultText = isIntraFed ? 'LIVE (NC)' : 'LIVE';
                               resultColor = 'var(--error)';
+                            } else if (isIntraFed) {
+                              resultText = 'Not Considered';
                             }
                             
                             return (
@@ -1031,6 +1043,14 @@ export default function App() {
                           <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Group {m.group}</span>
                           <span>•</span>
                           <span>Matchday {m.matchday}</span>
+                          {homeFed === awayFed && (
+                            <>
+                              <span>•</span>
+                              <span style={{ color: '#ef4444', fontWeight: 600, fontSize: '0.65rem', padding: '0.05rem 0.3rem', background: 'rgba(239, 68, 68, 0.08)', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                                Not considered
+                              </span>
+                            </>
+                          )}
                         </div>
                         {isLive ? (
                           <span style={{ color: 'var(--error)', fontWeight: 700, letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
@@ -1088,7 +1108,11 @@ export default function App() {
                             fontWeight: 500
                           }}
                         >
-                          {isDraw ? (
+                          {homeFed === awayFed ? (
+                            <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.25rem', fontStyle: 'italic' }}>
+                              Intra-federation match • Not considered for standings
+                            </span>
+                          ) : isDraw ? (
                             <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                               🤝 Draw: <span className={`fed-badge ${homeFed}`} style={{ padding: '0.05rem 0.25rem', fontSize: '0.55rem' }}>{homeFed}</span> Draw &amp; <span className={`fed-badge ${awayFed}`} style={{ padding: '0.05rem 0.25rem', fontSize: '0.55rem' }}>{awayFed}</span> Draw
                             </span>
